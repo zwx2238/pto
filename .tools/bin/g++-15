@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+export LD_LIBRARY_PATH="${REPO_ROOT}/.tools/miniconda3/lib:${LD_LIBRARY_PATH:-}"
+exec "${REPO_ROOT}/.tools/miniconda3/bin/aarch64-conda-linux-gnu-g++" "$@"

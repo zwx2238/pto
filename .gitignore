@@ -1,6 +1,9 @@
 .idea
 .tools/ptoas-bin
+.tools/miniconda3
+.tools/Miniconda3-Linux-aarch64.sh
 .venv-pto-sim
+.venv-pto-sim.py39-backup-*
 build_output
 ptoas-*.whl
 ptoas-bin-*.tar.gz
