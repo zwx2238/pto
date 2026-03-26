@@ -1,0 +1,28 @@
+[submodule "docs/pypto_top_level_documents"]
+	path = docs/pypto_top_level_documents
+	url = https://github.com/hengliao1972/pypto_top_level_design_documents.git
+	branch = main
+[submodule "frameworks/pypto"]
+	path = frameworks/pypto
+	url = https://github.com/hw-native-sys/pypto.git
+	branch = main
+[submodule "frameworks/simpler"]
+	path = frameworks/simpler
+	url = https://github.com/zwx2238/simpler.git
+	branch = main
+[submodule "frameworks/distributed-runtime"]
+	path = frameworks/distributed-runtime
+	url = https://github.com/hengliao1972/pypto_runtime_distributed.git
+	branch = main
+[submodule "upstream/PTOAS"]
+	path = upstream/PTOAS
+	url = https://github.com/zhangstevenunity/PTOAS.git
+	branch = main
+[submodule "upstream/pto-isa"]
+	path = upstream/pto-isa
+	url = https://github.com/zwx2238/pto-isa.git
+	branch = main
+[submodule "models/pypto-lib"]
+	path = models/pypto-lib
+	url = https://github.com/hw-native-sys/pypto-lib.git
+	branch = main

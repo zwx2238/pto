@@ -1,0 +1,6 @@
+.idea
+.tools/ptoas-bin
+.venv-pto-sim
+build_output
+ptoas-*.whl
+ptoas-bin-*.tar.gz
