@@ -128,7 +128,7 @@ _setup_npu_validate_env() {
         return 1
     fi
 
-    _setup_npu_require_file "${ASCEND_HOME_PATH}/bin/ccec" || return 1
+    _setup_npu_require_file "${ASCEND_HOME_PATH}/tools/bisheng_compiler/bin/ccec" || return 1
     _setup_npu_require_file "${ASCEND_HOME_PATH}/tools/hcc/bin/aarch64-target-linux-gnu-g++" || return 1
 
     npu-smi info >/dev/null 2>&1 || {
