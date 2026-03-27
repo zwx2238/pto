@@ -166,6 +166,89 @@ _setup_sim_prepare_local_toolchain_env() {
     _setup_sim_prepend_ld_library_path "${SETUP_SIM_MINICONDA_DIR}/lib"
 }
 
+_setup_sim_local_cc() {
+    printf '%s\n' "${SETUP_SIM_TOOLS_BIN_DIR}/gcc"
+}
+
+_setup_sim_local_cxx() {
+    printf '%s\n' "${SETUP_SIM_TOOLS_BIN_DIR}/g++"
+}
+
+_setup_sim_run_with_local_build_env() {
+    local cc_path=""
+    local cxx_path=""
+
+    _setup_sim_prepare_local_toolchain_env
+    cc_path="$(_setup_sim_local_cc)"
+    cxx_path="$(_setup_sim_local_cxx)"
+    _setup_sim_require_cmd "${cc_path}" || return 1
+    _setup_sim_require_cmd "${cxx_path}" || return 1
+
+    _setup_sim_run env \
+        -u AR \
+        -u AS \
+        -u CPP \
+        -u CPPFLAGS \
+        -u CFLAGS \
+        -u CXXFLAGS \
+        -u LDFLAGS \
+        -u LD \
+        -u NM \
+        -u RANLIB \
+        -u STRIP \
+        -u CC \
+        -u CXX \
+        -u CC_FOR_BUILD \
+        -u CXX_FOR_BUILD \
+        -u CMAKE_ARGS \
+        -u CMAKE_PREFIX_PATH \
+        -u CONDA_BUILD_SYSROOT \
+        -u CONDA_TOOLCHAIN_BUILD \
+        -u CONDA_TOOLCHAIN_HOST \
+        CC="${cc_path}" \
+        CXX="${cxx_path}" \
+        "$@"
+}
+
+_setup_sim_run_with_local_build_env_for_url() {
+    local url="$1"
+    shift
+
+    local cc_path=""
+    local cxx_path=""
+
+    _setup_sim_prepare_local_toolchain_env
+    cc_path="$(_setup_sim_local_cc)"
+    cxx_path="$(_setup_sim_local_cxx)"
+    _setup_sim_require_cmd "${cc_path}" || return 1
+    _setup_sim_require_cmd "${cxx_path}" || return 1
+
+    _setup_sim_run_for_url "${url}" env \
+        -u AR \
+        -u AS \
+        -u CPP \
+        -u CPPFLAGS \
+        -u CFLAGS \
+        -u CXXFLAGS \
+        -u LDFLAGS \
+        -u LD \
+        -u NM \
+        -u RANLIB \
+        -u STRIP \
+        -u CC \
+        -u CXX \
+        -u CC_FOR_BUILD \
+        -u CXX_FOR_BUILD \
+        -u CMAKE_ARGS \
+        -u CMAKE_PREFIX_PATH \
+        -u CONDA_BUILD_SYSROOT \
+        -u CONDA_TOOLCHAIN_BUILD \
+        -u CONDA_TOOLCHAIN_HOST \
+        CC="${cc_path}" \
+        CXX="${cxx_path}" \
+        "$@"
+}
+
 _setup_sim_detect_ascend_home() {
     local candidate=""
     local atc_bin=""
@@ -647,17 +730,21 @@ _setup_sim_pip() {
 
     if [[ -n "${SETUP_SIM_PIP_INDEX_URL:-}" ]]; then
         if [[ "${SETUP_SIM_PIP_INDEX_URL}" == http://* || "${SETUP_SIM_PIP_INDEX_URL}" == https://* ]]; then
-            _setup_sim_run_for_url "${SETUP_SIM_PIP_INDEX_URL}" env PYTHONPATH= PIP_INDEX_URL="${SETUP_SIM_PIP_INDEX_URL}" \
+            _setup_sim_run_with_local_build_env_for_url "${SETUP_SIM_PIP_INDEX_URL}" \
+                PYTHONPATH= \
+                PIP_INDEX_URL="${SETUP_SIM_PIP_INDEX_URL}" \
                 "${python_bin}" -m pip "$@" || return 1
             return 0
         fi
 
-        _setup_sim_run env PYTHONPATH= PIP_INDEX_URL="${SETUP_SIM_PIP_INDEX_URL}" \
+        _setup_sim_run_with_local_build_env \
+            PYTHONPATH= \
+            PIP_INDEX_URL="${SETUP_SIM_PIP_INDEX_URL}" \
             "${python_bin}" -m pip "$@" || return 1
         return 0
     fi
 
-    _setup_sim_run env PYTHONPATH= "${python_bin}" -m pip "$@" || return 1
+    _setup_sim_run_with_local_build_env PYTHONPATH= "${python_bin}" -m pip "$@" || return 1
 }
 
 _setup_sim_pip_torch() {
@@ -666,14 +753,14 @@ _setup_sim_pip_torch() {
 
     if [[ -n "${SETUP_SIM_TORCH_INDEX_URL:-}" ]]; then
         if [[ -n "${SETUP_SIM_PIP_INDEX_URL:-}" ]]; then
-            _setup_sim_run env PYTHONPATH= \
+            _setup_sim_run_with_local_build_env PYTHONPATH= \
                 PIP_INDEX_URL="${SETUP_SIM_TORCH_INDEX_URL}" \
                 PIP_EXTRA_INDEX_URL="${SETUP_SIM_PIP_INDEX_URL}" \
                 "${python_bin}" -m pip "$@" || return 1
             return 0
         fi
 
-        _setup_sim_run env PYTHONPATH= PIP_INDEX_URL="${SETUP_SIM_TORCH_INDEX_URL}" \
+        _setup_sim_run_with_local_build_env PYTHONPATH= PIP_INDEX_URL="${SETUP_SIM_TORCH_INDEX_URL}" \
             "${python_bin}" -m pip "$@" || return 1
         return 0
     fi
@@ -694,9 +781,19 @@ _setup_sim_install_torch_dep() {
     fi
 }
 
+_setup_sim_install_pypto_build_deps() {
+    if ! "${SETUP_SIM_VENV_DIR}/bin/python" -c "import nanobind, scikit_build_core" >/dev/null 2>&1; then
+        _setup_sim_pip "${SETUP_SIM_VENV_DIR}/bin/python" install \
+            "nanobind>=2.0.0" \
+            "scikit-build-core>=0.10.0" || return 1
+    fi
+}
+
 _setup_sim_install_pypto_dep() {
     if ! "${SETUP_SIM_VENV_DIR}/bin/python" -c "import pypto" >/dev/null 2>&1; then
-        _setup_sim_pip "${SETUP_SIM_VENV_DIR}/bin/python" install -e "${SETUP_SIM_REPO_ROOT}/frameworks/pypto" || return 1
+        _setup_sim_install_pypto_build_deps || return 1
+        _setup_sim_pip "${SETUP_SIM_VENV_DIR}/bin/python" install --no-build-isolation -e \
+            "${SETUP_SIM_REPO_ROOT}/frameworks/pypto" || return 1
     else
         _setup_sim_log "pypto already available in ${SETUP_SIM_VENV_DIR}"
     fi
@@ -784,8 +881,11 @@ _setup_sim_export_env() {
     export PTOAS_ROOT="$(cd "$(dirname "${SETUP_SIM_PTOAS_BIN}")" && pwd)"
     export PTO_ISA_ROOT="${SETUP_SIM_REPO_ROOT}/upstream/pto-isa"
     export LD_LIBRARY_PATH="$(_setup_sim_runtime_ld_library_path)"
-    export CC="${CC:-gcc}"
-    export CXX="${CXX:-g++}"
+    unset AR AS CPP CPPFLAGS CFLAGS CXXFLAGS LDFLAGS LD NM RANLIB STRIP
+    unset CC_FOR_BUILD CXX_FOR_BUILD CMAKE_ARGS CMAKE_PREFIX_PATH
+    unset CONDA_BUILD_SYSROOT CONDA_TOOLCHAIN_BUILD CONDA_TOOLCHAIN_HOST
+    export CC="$(_setup_sim_local_cc)"
+    export CXX="$(_setup_sim_local_cxx)"
     export PTO2_RING_TASK_WINDOW="${PTO2_RING_TASK_WINDOW:-128}"
     export PTO2_RING_HEAP="${PTO2_RING_HEAP:-8388608}"
     export PTO2_RING_DEP_POOL="${PTO2_RING_DEP_POOL:-256}"
