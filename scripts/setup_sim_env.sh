@@ -446,6 +446,7 @@ _setup_sim_ensure_miniconda() {
 _setup_sim_conda_install() {
     local conda_bin="${SETUP_SIM_MINICONDA_DIR}/bin/conda"
     local channel="${SETUP_SIM_CONDA_CHANNEL:-conda-forge}"
+    local fallback_channel="${SETUP_SIM_CONDA_FALLBACK_CHANNEL:-conda-forge}"
 
     [[ -x "${conda_bin}" ]] || {
         _setup_sim_err "conda not found after Miniconda bootstrap: ${conda_bin}"
@@ -453,9 +454,19 @@ _setup_sim_conda_install() {
     }
 
     if [[ "${channel}" == http://* || "${channel}" == https://* ]]; then
-        _setup_sim_run_for_url "${channel}" env PYTHONPATH= "${conda_bin}" install -y --override-channels \
-            --prefix "${SETUP_SIM_MINICONDA_DIR}" -c "${channel}" "$@" || return 1
-        return 0
+        if _setup_sim_run_for_url "${channel}" env PYTHONPATH= "${conda_bin}" install -y --override-channels \
+            --prefix "${SETUP_SIM_MINICONDA_DIR}" -c "${channel}" "$@"; then
+            return 0
+        fi
+
+        if [[ -n "${fallback_channel}" && "${fallback_channel}" != "${channel}" ]]; then
+            _setup_sim_log "retrying conda install with fallback channel: ${fallback_channel}"
+            _setup_sim_run env PYTHONPATH= "${conda_bin}" install -y --override-channels \
+                --prefix "${SETUP_SIM_MINICONDA_DIR}" -c "${fallback_channel}" "$@" || return 1
+            return 0
+        fi
+
+        return 1
     fi
 
     _setup_sim_run env PYTHONPATH= "${conda_bin}" install -y --override-channels \
@@ -839,6 +850,7 @@ SETUP_SIM_TOOLS_BIN_DIR="${SETUP_SIM_TOOLS_BIN_DIR:-${SETUP_SIM_TOOLS_DIR}/bin}"
 SETUP_SIM_MINICONDA_DIR="${SETUP_SIM_MINICONDA_DIR:-${SETUP_SIM_TOOLS_DIR}/miniconda3}"
 SETUP_SIM_MINICONDA_URL_BASE="${SETUP_SIM_MINICONDA_URL_BASE:-https://repo.anaconda.com/miniconda}"
 SETUP_SIM_CONDA_CHANNEL="${SETUP_SIM_CONDA_CHANNEL:-conda-forge}"
+SETUP_SIM_CONDA_FALLBACK_CHANNEL="${SETUP_SIM_CONDA_FALLBACK_CHANNEL:-conda-forge}"
 SETUP_SIM_DIRECT_HOSTS="${SETUP_SIM_DIRECT_HOSTS:-mirrors.ustc.edu.cn mirrors.tuna.tsinghua.edu.cn pypi.tuna.tsinghua.edu.cn}"
 SETUP_SIM_VENV_DIR="${SETUP_SIM_VENV_DIR:-${SETUP_SIM_REPO_ROOT}/.venv-pto-sim}"
 SETUP_SIM_PTOAS_DIR="${SETUP_SIM_PTOAS_DIR:-${SETUP_SIM_REPO_ROOT}/.tools/ptoas-bin}"

@@ -110,6 +110,19 @@ def _probe_url(category: str, name: str, url: str, proxy_mode: str) -> ProbeResu
         )
 
 
+def _probe_conda_package(channel_base: str, arch: str, proxy_mode: str) -> ProbeResult:
+    if channel_base == "conda-forge":
+        url = f"https://conda.anaconda.org/conda-forge/linux-{arch}/cmake-4.3.0-hc9d863e_0.conda"
+        return _probe_url("conda_package", "origin_pkg", url, proxy_mode)
+
+    parsed = urllib.parse.urlparse(channel_base)
+    if "/anaconda/cloud/conda-forge" in channel_base:
+        url = f"{parsed.scheme}://{parsed.netloc}/anaconda/cloud/conda-forge/linux-{arch}/cmake-4.3.0-hc9d863e_0.conda"
+    else:
+        url = f"{parsed.scheme}://{parsed.netloc}/conda-forge/linux-{arch}/cmake-4.3.0-hc9d863e_0.conda"
+    return _probe_url("conda_package", parsed.netloc, url, proxy_mode)
+
+
 def _measure_git_ls_remote(url: str) -> dict:
     start = time.perf_counter()
     try:
@@ -281,9 +294,28 @@ def main() -> int:
         selected_exports["SETUP_SIM_MINICONDA_URL_BASE"] = f"{parsed.scheme}://{parsed.netloc}/anaconda/miniconda" if "/anaconda/miniconda/" in best_miniconda.url else f"{parsed.scheme}://{parsed.netloc}/miniconda"
 
     best_conda = _choose_best(all_results["conda_forge"])
+    conda_channel_candidates = []
     if best_conda is not None:
         parsed = urllib.parse.urlparse(best_conda.url)
         if "/anaconda/cloud/conda-forge/" in best_conda.url:
+            conda_channel_candidates.append((f"{parsed.scheme}://{parsed.netloc}/anaconda/cloud/conda-forge", best_conda.proxy_mode))
+        else:
+            conda_channel_candidates.append(("conda-forge", best_conda.proxy_mode))
+    conda_channel_candidates.append(("conda-forge", "env"))
+
+    conda_package_results = []
+    seen_conda_channels = set()
+    for channel_base, proxy_mode in conda_channel_candidates:
+        if channel_base in seen_conda_channels:
+            continue
+        seen_conda_channels.add(channel_base)
+        conda_package_results.append(_probe_conda_package(channel_base, arch, proxy_mode))
+    all_results["conda_package"] = conda_package_results
+
+    best_conda_package = _choose_best(conda_package_results)
+    if best_conda_package is not None:
+        parsed = urllib.parse.urlparse(best_conda_package.url)
+        if "/anaconda/cloud/conda-forge/" in best_conda_package.url:
             selected_exports["SETUP_SIM_CONDA_CHANNEL"] = f"{parsed.scheme}://{parsed.netloc}/anaconda/cloud/conda-forge"
         else:
             selected_exports["SETUP_SIM_CONDA_CHANNEL"] = "conda-forge"
