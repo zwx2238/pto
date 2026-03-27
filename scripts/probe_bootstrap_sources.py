@@ -20,7 +20,7 @@ DEFAULT_MINICONDA_URL_BASE = "https://repo.anaconda.com/miniconda"
 DEFAULT_CONDA_CHANNEL = "conda-forge"
 DEFAULT_DIRECT_HOSTS = "mirrors.ustc.edu.cn mirrors.tuna.tsinghua.edu.cn pypi.tuna.tsinghua.edu.cn"
 DEFAULT_PTOAS_PRIMARY_PREFIX = "https://ghpull.com/"
-DEFAULT_PIP_INDEX_URL = "https://mirrors.ustc.edu.cn/pypi/simple"
+DEFAULT_PIP_INDEX_URL = ""
 DEFAULT_TORCH_INDEX_URL = "https://download.pytorch.org/whl/cpu"
 DEFAULT_PTOAS_VERSION = "0.17"
 
@@ -277,20 +277,22 @@ def _build_probe_plan(configured_exports: dict[str, str], arch: str, deadline: f
 
     miniconda_url = _resolve_miniconda_url(configured_exports["SETUP_SIM_MINICONDA_URL_BASE"], arch)
     conda_url = _resolve_conda_package_url(configured_exports["SETUP_SIM_CONDA_CHANNEL"], arch)
-    pip_url = _resolve_pip_probe_url(configured_exports["SETUP_SIM_PIP_INDEX_URL"])
     ptoas_url = _resolve_ptoas_url(configured_exports["SETUP_SIM_PTOAS_PRIMARY_PREFIX"], arch)
 
     torch_index_url = configured_exports["SETUP_SIM_TORCH_INDEX_URL"]
     torch_proxy_mode = _proxy_mode_for_url(torch_index_url, direct_hosts)
     torch_url = _discover_torch_wheel_url(torch_index_url, deadline, torch_proxy_mode) or torch_index_url
 
-    return [
+    plan = [
         ("miniconda", miniconda_url, _proxy_mode_for_url(miniconda_url, direct_hosts)),
         ("conda_package", conda_url, _proxy_mode_for_url(conda_url, direct_hosts)),
-        ("pip_index", pip_url, _proxy_mode_for_url(pip_url, direct_hosts)),
         ("ptoas_release", ptoas_url, _proxy_mode_for_url(ptoas_url, direct_hosts)),
-        ("torch", torch_url, _proxy_mode_for_url(torch_url, direct_hosts)),
     ]
+    if configured_exports["SETUP_SIM_PIP_INDEX_URL"]:
+        pip_url = _resolve_pip_probe_url(configured_exports["SETUP_SIM_PIP_INDEX_URL"])
+        plan.append(("pip_index", pip_url, _proxy_mode_for_url(pip_url, direct_hosts)))
+    plan.append(("torch", torch_url, _proxy_mode_for_url(torch_url, direct_hosts)))
+    return plan
 
 
 def main() -> int:
