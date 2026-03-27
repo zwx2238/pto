@@ -548,6 +548,23 @@ _setup_sim_manual_clone_submodules() {
     done < <(git config -f "${gitmodules_path}" --get-regexp '^submodule\..*\.path$')
 }
 
+_setup_sim_repair_submodule_worktrees() {
+    local gitmodules_path="${SETUP_SIM_REPO_ROOT}/.gitmodules"
+    local key=""
+    local submodule_path=""
+    local submodule_dir=""
+
+    [[ -f "${gitmodules_path}" ]] || return 0
+
+    while read -r key submodule_path; do
+        [[ -n "${submodule_path:-}" ]] || continue
+        submodule_dir="${SETUP_SIM_REPO_ROOT}/${submodule_path}"
+        [[ -d "${submodule_dir}" ]] || continue
+        [[ -e "${submodule_dir}/.git" ]] || continue
+        _setup_sim_run git -C "${submodule_dir}" checkout -f HEAD || return 1
+    done < <(git config -f "${gitmodules_path}" --get-regexp '^submodule\..*\.path$')
+}
+
 _setup_sim_ensure_repo_sources() {
     if _setup_sim_have_repo_sources; then
         return 0
@@ -570,6 +587,8 @@ _setup_sim_ensure_repo_sources() {
         _setup_sim_log "bootstrapping sources from .gitmodules"
         _setup_sim_manual_clone_submodules || return 1
     fi
+
+    _setup_sim_repair_submodule_worktrees || return 1
 
     _setup_sim_have_repo_sources || {
         _setup_sim_err "required repository sources are still missing after bootstrap"
