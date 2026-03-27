@@ -2,5 +2,26 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+case "$(uname -m)" in
+    x86_64|amd64)
+        CONDA_TRIPLET="x86_64-conda-linux-gnu"
+        ;;
+    aarch64|arm64)
+        CONDA_TRIPLET="aarch64-conda-linux-gnu"
+        ;;
+    *)
+        printf '[conda-gcc-wrapper] unsupported architecture: %s\n' "$(uname -m)" >&2
+        exit 1
+        ;;
+esac
+
+TARGET="${REPO_ROOT}/.tools/miniconda3/bin/${CONDA_TRIPLET}-gcc"
+if [[ ! -x "${TARGET}" ]]; then
+    printf '[conda-gcc-wrapper] compiler not found: %s\n' "${TARGET}" >&2
+    printf '[conda-gcc-wrapper] run: source %s/scripts/setup_sim_env.sh\n' "${REPO_ROOT}" >&2
+    exit 1
+fi
+
 export LD_LIBRARY_PATH="${REPO_ROOT}/.tools/miniconda3/lib:${LD_LIBRARY_PATH:-}"
-exec "${REPO_ROOT}/.tools/miniconda3/bin/aarch64-conda-linux-gnu-gcc" "$@"
+exec "${TARGET}" "$@"

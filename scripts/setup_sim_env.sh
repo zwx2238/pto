@@ -37,10 +37,30 @@ _setup_sim_require_cmd() {
     }
 }
 
+_setup_sim_have_repo_sources() {
+    local -a required_paths=(
+        "frameworks/pypto/pyproject.toml"
+        "frameworks/simpler/python/runtime_builder.py"
+        "models/pypto-lib/examples/beginner/hello_world.py"
+        "upstream/pto-isa/pyproject.toml"
+    )
+    local rel_path=""
+
+    for rel_path in "${required_paths[@]}"; do
+        [[ -e "${SETUP_SIM_REPO_ROOT}/${rel_path}" ]] || return 1
+    done
+
+    return 0
+}
+
 _setup_sim_warn_optional_cmd() {
     local cmd="$1"
     local hint="${2:-optional command not found: $cmd}"
     command -v "$cmd" >/dev/null 2>&1 || _setup_sim_log "$hint"
+}
+
+_setup_sim_git_available() {
+    command -v git >/dev/null 2>&1
 }
 
 _setup_sim_prepend_path() {
@@ -61,20 +81,92 @@ _setup_sim_prepend_ld_library_path() {
     esac
 }
 
+_setup_sim_prepend_path_force() {
+    local dir="$1"
+    [[ -d "${dir}" ]] || return 0
+
+    local path_value=":${PATH}:"
+    path_value="${path_value//:${dir}:/\:}"
+    path_value="${path_value#:}"
+    path_value="${path_value%:}"
+    export PATH="${dir}${path_value:+:${path_value}}"
+}
+
+_setup_sim_refresh_shell_hash() {
+    hash -r 2>/dev/null || true
+}
+
 _setup_sim_prepare_local_toolchain_env() {
-    _setup_sim_prepend_path "${SETUP_SIM_REPO_ROOT}/.tools/bin"
-    _setup_sim_prepend_path "${SETUP_SIM_REPO_ROOT}/.tools/miniconda3/bin"
-    _setup_sim_prepend_ld_library_path "${SETUP_SIM_REPO_ROOT}/.tools/miniconda3/lib"
+    _setup_sim_prepend_path "${SETUP_SIM_TOOLS_BIN_DIR}"
+    _setup_sim_prepend_path "${SETUP_SIM_MINICONDA_DIR}/bin"
+    _setup_sim_prepend_ld_library_path "${SETUP_SIM_MINICONDA_DIR}/lib"
+}
+
+_setup_sim_detect_ascend_home() {
+    local candidate=""
+    local atc_bin=""
+
+    if [[ -n "${ASCEND_HOME_PATH:-}" && -d "${ASCEND_HOME_PATH}" ]]; then
+        printf '%s\n' "${ASCEND_HOME_PATH}"
+        return 0
+    fi
+
+    if [[ -n "${ASCEND_TOOLKIT_HOME:-}" && -d "${ASCEND_TOOLKIT_HOME}" ]]; then
+        printf '%s\n' "${ASCEND_TOOLKIT_HOME}"
+        return 0
+    fi
+
+    if atc_bin="$(command -v atc 2>/dev/null)"; then
+        candidate="$(cd "$(dirname "${atc_bin}")/.." && pwd)"
+        if [[ -d "${candidate}" ]]; then
+            printf '%s\n' "${candidate}"
+            return 0
+        fi
+    fi
+
+    for candidate in \
+        "/usr/local/Ascend/ascend-toolkit/latest" \
+        "/usr/local/Ascend/ascend-toolkit/latest/aarch64-linux"
+    do
+        if [[ -d "${candidate}" ]]; then
+            printf '%s\n' "${candidate}"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+_setup_sim_prepare_ascend_env() {
+    local ascend_home=""
+
+    if ! ascend_home="$(_setup_sim_detect_ascend_home 2>/dev/null)"; then
+        return 0
+    fi
+
+    export ASCEND_HOME_PATH="${ASCEND_HOME_PATH:-${ascend_home}}"
+    export ASCEND_TOOLKIT_HOME="${ASCEND_TOOLKIT_HOME:-${ASCEND_HOME_PATH}}"
+
+    _setup_sim_prepend_path "${ASCEND_HOME_PATH}/bin"
+    _setup_sim_prepend_ld_library_path "${ASCEND_HOME_PATH}/lib64"
+    _setup_sim_prepend_ld_library_path "${ASCEND_HOME_PATH}/lib64/plugin/opskernel"
+    _setup_sim_prepend_ld_library_path "${ASCEND_HOME_PATH}/lib64/plugin/nnengine"
+    _setup_sim_prepend_ld_library_path "${ASCEND_HOME_PATH}/opp/built-in/op_impl/ai_core/tbe/op_tiling/lib/linux/aarch64"
+    _setup_sim_prepend_ld_library_path "${ASCEND_HOME_PATH}/tools/aml/lib64"
+    _setup_sim_prepend_ld_library_path "${ASCEND_HOME_PATH}/tools/aml/lib64/plugin"
+    _setup_sim_prepend_ld_library_path "/usr/local/Ascend/driver/lib64"
+    _setup_sim_prepend_ld_library_path "/usr/local/Ascend/driver/lib64/common"
+    _setup_sim_prepend_ld_library_path "/usr/local/Ascend/driver/lib64/driver"
 }
 
 _setup_sim_runtime_ld_library_path() {
     local lib_path="${LD_LIBRARY_PATH:-}"
 
-    if [[ -d "${SETUP_SIM_REPO_ROOT}/.tools/miniconda3/lib" ]]; then
+    if [[ -d "${SETUP_SIM_MINICONDA_DIR}/lib" ]]; then
         if [[ -n "${lib_path}" ]]; then
-            lib_path="${SETUP_SIM_REPO_ROOT}/.tools/miniconda3/lib:${lib_path}"
+            lib_path="${SETUP_SIM_MINICONDA_DIR}/lib:${lib_path}"
         else
-            lib_path="${SETUP_SIM_REPO_ROOT}/.tools/miniconda3/lib"
+            lib_path="${SETUP_SIM_MINICONDA_DIR}/lib"
         fi
     fi
 
@@ -91,13 +183,13 @@ _setup_sim_choose_python() {
         return 0
     fi
 
-    if [[ -x "${SETUP_SIM_REPO_ROOT}/.tools/miniconda3/bin/python3" ]]; then
-        printf '%s\n' "${SETUP_SIM_REPO_ROOT}/.tools/miniconda3/bin/python3"
+    if [[ -x "${SETUP_SIM_MINICONDA_DIR}/bin/python3" ]]; then
+        printf '%s\n' "${SETUP_SIM_MINICONDA_DIR}/bin/python3"
         return 0
     fi
 
-    if [[ -x "${SETUP_SIM_REPO_ROOT}/.tools/miniconda3/bin/python" ]]; then
-        printf '%s\n' "${SETUP_SIM_REPO_ROOT}/.tools/miniconda3/bin/python"
+    if [[ -x "${SETUP_SIM_MINICONDA_DIR}/bin/python" ]]; then
+        printf '%s\n' "${SETUP_SIM_MINICONDA_DIR}/bin/python"
         return 0
     fi
 
@@ -123,6 +215,34 @@ _setup_sim_detect_arch() {
     esac
 }
 
+_setup_sim_choose_conda_triplet() {
+    case "$(_setup_sim_detect_arch)" in
+        x86_64)
+            printf 'x86_64-conda-linux-gnu\n'
+            ;;
+        aarch64)
+            printf 'aarch64-conda-linux-gnu\n'
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+_setup_sim_conda_compiler_packages() {
+    case "$(_setup_sim_detect_arch)" in
+        x86_64)
+            printf 'gcc_linux-64 gxx_linux-64\n'
+            ;;
+        aarch64)
+            printf 'gcc_linux-aarch64 gxx_linux-aarch64\n'
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 _setup_sim_download() {
     local url="$1"
     local output="$2"
@@ -137,8 +257,180 @@ _setup_sim_download() {
         return 0
     fi
 
-    _setup_sim_err "need curl or wget to download ptoas"
+    if command -v python3 >/dev/null 2>&1; then
+        _setup_sim_run python3 - "$url" "$output" <<'PY' || return 1
+import pathlib
+import sys
+import urllib.request
+
+url = sys.argv[1]
+output = pathlib.Path(sys.argv[2])
+output.parent.mkdir(parents=True, exist_ok=True)
+with urllib.request.urlopen(url) as response:
+    output.write_bytes(response.read())
+PY
+        return 0
+    fi
+
+    if command -v python >/dev/null 2>&1; then
+        _setup_sim_run python - "$url" "$output" <<'PY' || return 1
+import pathlib
+import sys
+import urllib.request
+
+url = sys.argv[1]
+output = pathlib.Path(sys.argv[2])
+output.parent.mkdir(parents=True, exist_ok=True)
+with urllib.request.urlopen(url) as response:
+    output.write_bytes(response.read())
+PY
+        return 0
+    fi
+
+    _setup_sim_err "need curl, wget, python3, or python to download bootstrap assets"
     return 1
+}
+
+_setup_sim_ensure_miniconda() {
+    local arch=""
+    local installer_name=""
+    local installer_path=""
+    local installer_url=""
+
+    if [[ -x "${SETUP_SIM_MINICONDA_DIR}/bin/python3" ]]; then
+        return 0
+    fi
+
+    arch="$(_setup_sim_detect_arch)" || return 1
+    installer_name="Miniconda3-latest-Linux-${arch}.sh"
+    installer_path="${SETUP_SIM_TOOLS_DIR}/${installer_name}"
+    installer_url="${SETUP_SIM_MINICONDA_URL_BASE}/${installer_name}"
+
+    mkdir -p "${SETUP_SIM_TOOLS_DIR}"
+
+    if [[ ! -f "${installer_path}" ]]; then
+        _setup_sim_log "downloading ${installer_name}"
+        _setup_sim_download "${installer_url}" "${installer_path}" || return 1
+        chmod +x "${installer_path}" || return 1
+    fi
+
+    if [[ -d "${SETUP_SIM_MINICONDA_DIR}" && ! -x "${SETUP_SIM_MINICONDA_DIR}/bin/python3" ]]; then
+        rm -rf "${SETUP_SIM_MINICONDA_DIR}"
+    fi
+
+    _setup_sim_run bash "${installer_path}" -b -p "${SETUP_SIM_MINICONDA_DIR}" || return 1
+}
+
+_setup_sim_conda_install() {
+    local conda_bin="${SETUP_SIM_MINICONDA_DIR}/bin/conda"
+    local channel="${SETUP_SIM_CONDA_CHANNEL:-conda-forge}"
+
+    [[ -x "${conda_bin}" ]] || {
+        _setup_sim_err "conda not found after Miniconda bootstrap: ${conda_bin}"
+        return 1
+    }
+
+    _setup_sim_run env PYTHONPATH= "${conda_bin}" install -y --override-channels \
+        --prefix "${SETUP_SIM_MINICONDA_DIR}" -c "${channel}" "$@" || return 1
+}
+
+_setup_sim_ensure_local_build_tools() {
+    local compiler_triplet=""
+    local compiler_packages=""
+    local gcc_pkg=""
+    local gxx_pkg=""
+    local -a missing_packages=()
+
+    _setup_sim_ensure_miniconda || return 1
+    _setup_sim_prepare_local_toolchain_env
+
+    compiler_triplet="$(_setup_sim_choose_conda_triplet)" || return 1
+    compiler_packages="$(_setup_sim_conda_compiler_packages)" || return 1
+    read -r gcc_pkg gxx_pkg <<<"${compiler_packages}"
+
+    command -v git >/dev/null 2>&1 || missing_packages+=("git")
+    [[ -x "${SETUP_SIM_MINICONDA_DIR}/bin/cmake" ]] || missing_packages+=("cmake")
+    [[ -x "${SETUP_SIM_MINICONDA_DIR}/bin/ninja" ]] || missing_packages+=("ninja")
+    [[ -x "${SETUP_SIM_MINICONDA_DIR}/bin/make" ]] || missing_packages+=("make")
+    [[ -x "${SETUP_SIM_MINICONDA_DIR}/bin/${compiler_triplet}-gcc" ]] || missing_packages+=("${gcc_pkg}")
+    [[ -x "${SETUP_SIM_MINICONDA_DIR}/bin/${compiler_triplet}-g++" ]] || missing_packages+=("${gxx_pkg}")
+
+    if (( ${#missing_packages[@]} == 0 )); then
+        return 0
+    fi
+
+    _setup_sim_log "installing local build tools: ${missing_packages[*]}"
+    _setup_sim_conda_install "${missing_packages[@]}" || return 1
+    _setup_sim_prepare_local_toolchain_env
+}
+
+_setup_sim_manual_clone_submodules() {
+    local gitmodules_path="${SETUP_SIM_REPO_ROOT}/.gitmodules"
+    local key=""
+    local submodule_path=""
+    local submodule_name=""
+    local submodule_url=""
+    local submodule_branch=""
+    local submodule_dir=""
+    local -a clone_cmd=()
+
+    [[ -f "${gitmodules_path}" ]] || {
+        _setup_sim_err "missing .gitmodules and required sources are absent"
+        return 1
+    }
+
+    while read -r key submodule_path; do
+        [[ -n "${submodule_path:-}" ]] || continue
+        submodule_name="${key#submodule.}"
+        submodule_name="${submodule_name%.path}"
+        submodule_url="$(git config -f "${gitmodules_path}" --get "submodule.${submodule_name}.url" || true)"
+        submodule_branch="$(git config -f "${gitmodules_path}" --get "submodule.${submodule_name}.branch" || true)"
+        submodule_dir="${SETUP_SIM_REPO_ROOT}/${submodule_path}"
+
+        if [[ -d "${submodule_dir}" ]] && [[ -n "$(ls -A "${submodule_dir}" 2>/dev/null)" ]]; then
+            continue
+        fi
+
+        [[ -n "${submodule_url}" ]] || {
+            _setup_sim_err "missing URL for submodule ${submodule_name} in .gitmodules"
+            return 1
+        }
+
+        rm -rf "${submodule_dir}"
+        mkdir -p "$(dirname "${submodule_dir}")"
+
+        clone_cmd=(git clone --recursive)
+        if [[ -n "${submodule_branch}" ]]; then
+            clone_cmd+=(--branch "${submodule_branch}")
+        fi
+        clone_cmd+=("${submodule_url}" "${submodule_dir}")
+
+        _setup_sim_run "${clone_cmd[@]}" || return 1
+    done < <(git config -f "${gitmodules_path}" --get-regexp '^submodule\..*\.path$')
+}
+
+_setup_sim_ensure_repo_sources() {
+    if _setup_sim_have_repo_sources; then
+        return 0
+    fi
+
+    _setup_sim_git_available || {
+        _setup_sim_err "git is required to bootstrap missing repository sources"
+        return 1
+    }
+
+    if [[ -d "${SETUP_SIM_REPO_ROOT}/.git" || -f "${SETUP_SIM_REPO_ROOT}/.git" ]]; then
+        _setup_sim_log "bootstrapping submodules from current git checkout"
+        _setup_sim_run git -C "${SETUP_SIM_REPO_ROOT}" submodule update --init --recursive || return 1
+    else
+        _setup_sim_log "bootstrapping sources from .gitmodules"
+        _setup_sim_manual_clone_submodules || return 1
+    fi
+
+    _setup_sim_have_repo_sources || {
+        _setup_sim_err "required repository sources are still missing after bootstrap"
+        return 1
+    }
 }
 
 _setup_sim_choose_ptoas_bin() {
@@ -153,6 +445,24 @@ _setup_sim_choose_ptoas_bin() {
     fi
 
     return 1
+}
+
+_setup_sim_extract_tar_gz() {
+    local archive_path="$1"
+    local dest_dir="$2"
+
+    _setup_sim_run env PYTHONPATH= "${SETUP_SIM_PYTHON_BIN}" - "$archive_path" "$dest_dir" <<'PY' || return 1
+import pathlib
+import sys
+import tarfile
+
+archive = pathlib.Path(sys.argv[1]).resolve()
+dest = pathlib.Path(sys.argv[2]).resolve()
+dest.mkdir(parents=True, exist_ok=True)
+
+with tarfile.open(archive, "r:gz") as tar:
+    tar.extractall(dest)
+PY
 }
 
 _setup_sim_bootstrap_venv() {
@@ -254,7 +564,7 @@ _setup_sim_ensure_ptoas() {
 
     rm -rf "${SETUP_SIM_PTOAS_DIR}"
     mkdir -p "${SETUP_SIM_PTOAS_DIR}"
-    _setup_sim_run tar -xzf "${archive_path}" -C "${SETUP_SIM_PTOAS_DIR}" || {
+    _setup_sim_extract_tar_gz "${archive_path}" "${SETUP_SIM_PTOAS_DIR}" || {
         rm -rf "${tmp_dir}"
         return 1
     }
@@ -289,12 +599,19 @@ _setup_sim_export_env() {
     # shellcheck disable=SC1090
     source "${SETUP_SIM_VENV_DIR}/bin/activate"
     _setup_sim_prepare_local_toolchain_env
+    _setup_sim_prepare_ascend_env
+    _setup_sim_prepend_path_force "${SETUP_SIM_VENV_DIR}/bin"
     export SIMPLER_ROOT="${SETUP_SIM_REPO_ROOT}/frameworks/simpler"
     export PTOAS_ROOT="$(cd "$(dirname "${SETUP_SIM_PTOAS_BIN}")" && pwd)"
     export PTO_ISA_ROOT="${SETUP_SIM_REPO_ROOT}/upstream/pto-isa"
     export LD_LIBRARY_PATH="$(_setup_sim_runtime_ld_library_path)"
     export CC="${CC:-gcc}"
     export CXX="${CXX:-g++}"
+    export PTO2_RING_TASK_WINDOW="${PTO2_RING_TASK_WINDOW:-128}"
+    export PTO2_RING_HEAP="${PTO2_RING_HEAP:-8388608}"
+    export PTO2_RING_DEP_POOL="${PTO2_RING_DEP_POOL:-256}"
+    _setup_sim_refresh_shell_hash
+    _setup_sim_log "active python: $(command -v python)"
 }
 
 _setup_sim_validate_env() {
@@ -327,10 +644,11 @@ _setup_sim_main() {
         return 1
     fi
 
+    _setup_sim_ensure_local_build_tools || return 1
     _setup_sim_prepare_local_toolchain_env
+    _setup_sim_ensure_repo_sources || return 1
     SETUP_SIM_PYTHON_BIN="$(_setup_sim_choose_python)" || return 1
     _setup_sim_log "using python: ${SETUP_SIM_PYTHON_BIN}"
-    _setup_sim_require_cmd tar || return 1
     _setup_sim_require_cmd cmake || return 1
     _setup_sim_require_cmd ninja || return 1
     _setup_sim_require_cmd gcc || return 1
@@ -375,6 +693,11 @@ _setup_sim_main() {
 
 SETUP_SIM_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SETUP_SIM_REPO_ROOT="$(cd "${SETUP_SIM_SCRIPT_DIR}/.." && pwd)"
+SETUP_SIM_TOOLS_DIR="${SETUP_SIM_TOOLS_DIR:-${SETUP_SIM_REPO_ROOT}/.tools}"
+SETUP_SIM_TOOLS_BIN_DIR="${SETUP_SIM_TOOLS_BIN_DIR:-${SETUP_SIM_TOOLS_DIR}/bin}"
+SETUP_SIM_MINICONDA_DIR="${SETUP_SIM_MINICONDA_DIR:-${SETUP_SIM_TOOLS_DIR}/miniconda3}"
+SETUP_SIM_MINICONDA_URL_BASE="${SETUP_SIM_MINICONDA_URL_BASE:-https://repo.anaconda.com/miniconda}"
+SETUP_SIM_CONDA_CHANNEL="${SETUP_SIM_CONDA_CHANNEL:-conda-forge}"
 SETUP_SIM_VENV_DIR="${SETUP_SIM_VENV_DIR:-${SETUP_SIM_REPO_ROOT}/.venv-pto-sim}"
 SETUP_SIM_PTOAS_DIR="${SETUP_SIM_PTOAS_DIR:-${SETUP_SIM_REPO_ROOT}/.tools/ptoas-bin}"
 SETUP_SIM_PTOAS_VERSION="${SETUP_SIM_PTOAS_VERSION:-0.17}"
