@@ -803,52 +803,58 @@ _setup_sim_install_pypto_dep() {
     fi
 }
 
+_setup_sim_validate_ptoas_archive() {
+    local archive_path="${SETUP_SIM_PTOAS_ARCHIVE:-}"
+
+    if [[ -z "${archive_path}" ]]; then
+        _setup_sim_err "SETUP_SIM_PTOAS_ARCHIVE is not set"
+        return 1
+    fi
+
+    archive_path="${archive_path/#\~/${HOME}}"
+
+    if [[ ! -f "${archive_path}" ]]; then
+        _setup_sim_err "ptoas archive not found: ${archive_path}"
+        return 1
+    fi
+
+    _setup_sim_run env PYTHONPATH= "${SETUP_SIM_PYTHON_BIN}" - "${archive_path}" <<'PY' || return 1
+import pathlib
+import sys
+import tarfile
+
+archive = pathlib.Path(sys.argv[1]).resolve()
+with tarfile.open(archive, "r:gz") as tar:
+    names = tar.getnames()
+
+if not any(name == "ptoas" or name.endswith("/ptoas") for name in names):
+    raise SystemExit(f"ptoas executable not found in archive: {archive}")
+PY
+}
+
 _setup_sim_ensure_ptoas() {
     local existing_bin=""
-    local arch=""
-    local archive_url=""
-    local archive_fallback_url=""
-    local tmp_dir=""
     local archive_path=""
 
-    if [[ -n "${PTOAS_ROOT:-}" && -x "${PTOAS_ROOT}/ptoas" ]]; then
-        SETUP_SIM_PTOAS_BIN="${PTOAS_ROOT}/ptoas"
+    if [[ -n "${SETUP_SIM_PTOAS_BIN:-}" ]]; then
+        [[ -x "${SETUP_SIM_PTOAS_BIN}" ]] || {
+            _setup_sim_err "SETUP_SIM_PTOAS_BIN is not executable: ${SETUP_SIM_PTOAS_BIN}"
+            return 1
+        }
         return 0
     fi
 
-    if command -v ptoas >/dev/null 2>&1; then
-        SETUP_SIM_PTOAS_BIN="$(command -v ptoas)"
-        return 0
-    fi
+    _setup_sim_validate_ptoas_archive || return 1
+    archive_path="${SETUP_SIM_PTOAS_ARCHIVE/#\~/${HOME}}"
 
     if existing_bin="$(_setup_sim_choose_ptoas_bin 2>/dev/null)"; then
         SETUP_SIM_PTOAS_BIN="${existing_bin}"
         return 0
     fi
 
-    arch="$(_setup_sim_detect_arch)" || return 1
-    archive_fallback_url="https://github.com/zhangstevenunity/PTOAS/releases/download/v${SETUP_SIM_PTOAS_VERSION}/ptoas-bin-${arch}.tar.gz"
-    archive_url="${SETUP_SIM_PTOAS_PRIMARY_PREFIX}${archive_fallback_url}"
-
-    tmp_dir="$(mktemp -d)"
-    archive_path="${tmp_dir}/ptoas-bin-${arch}.tar.gz"
-
-    _setup_sim_log "downloading ptoas ${SETUP_SIM_PTOAS_VERSION} for ${arch}"
-    _setup_sim_download "${archive_url}" "${archive_path}" || {
-        _setup_sim_log "primary ptoas download failed; retrying via GitHub release URL"
-        _setup_sim_download "${archive_fallback_url}" "${archive_path}"
-    } || {
-        rm -rf "${tmp_dir}"
-        return 1
-    }
-
     rm -rf "${SETUP_SIM_PTOAS_DIR}"
     mkdir -p "${SETUP_SIM_PTOAS_DIR}"
-    _setup_sim_extract_tar_gz "${archive_path}" "${SETUP_SIM_PTOAS_DIR}" || {
-        rm -rf "${tmp_dir}"
-        return 1
-    }
-    rm -rf "${tmp_dir}"
+    _setup_sim_extract_tar_gz "${archive_path}" "${SETUP_SIM_PTOAS_DIR}" || return 1
 
     [[ -f "${SETUP_SIM_PTOAS_DIR}/bin/ptoas" ]] && chmod +x "${SETUP_SIM_PTOAS_DIR}/bin/ptoas"
     [[ -f "${SETUP_SIM_PTOAS_DIR}/ptoas" ]] && chmod +x "${SETUP_SIM_PTOAS_DIR}/ptoas"
@@ -985,8 +991,7 @@ SETUP_SIM_CONDA_FALLBACK_CHANNEL="${SETUP_SIM_CONDA_FALLBACK_CHANNEL:-conda-forg
 SETUP_SIM_DIRECT_HOSTS="${SETUP_SIM_DIRECT_HOSTS:-mirrors.ustc.edu.cn mirrors.tuna.tsinghua.edu.cn pypi.tuna.tsinghua.edu.cn}"
 SETUP_SIM_VENV_DIR="${SETUP_SIM_VENV_DIR:-${SETUP_SIM_REPO_ROOT}/.venv-pto-sim}"
 SETUP_SIM_PTOAS_DIR="${SETUP_SIM_PTOAS_DIR:-${SETUP_SIM_REPO_ROOT}/.tools/ptoas-bin}"
-SETUP_SIM_PTOAS_VERSION="${SETUP_SIM_PTOAS_VERSION:-0.17}"
-SETUP_SIM_PTOAS_PRIMARY_PREFIX="${SETUP_SIM_PTOAS_PRIMARY_PREFIX:-https://ghpull.com/}"
+SETUP_SIM_PTOAS_ARCHIVE="${SETUP_SIM_PTOAS_ARCHIVE:-}"
 SETUP_SIM_PIP_INDEX_URL="${SETUP_SIM_PIP_INDEX_URL:-}"
 SETUP_SIM_TORCH_INDEX_URL="${SETUP_SIM_TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}"
 

@@ -62,6 +62,31 @@ _choose_probe_python() {
     return 1
 }
 
+_steps_check_ptoas_archive() {
+    local archive_path="${SETUP_SIM_PTOAS_ARCHIVE:-}"
+
+    if [[ -z "${SETUP_SIM_PTOAS_ARCHIVE:-}" ]]; then
+        _steps_err "SETUP_SIM_PTOAS_ARCHIVE is not set"
+        return 1
+    fi
+
+    archive_path="${archive_path/#\~/${HOME}}"
+    _steps_require_file "${archive_path}" || return 1
+
+    "${PROBE_PY}" - "${archive_path}" <<'PY' || return 1
+import pathlib
+import sys
+import tarfile
+
+archive = pathlib.Path(sys.argv[1]).resolve()
+with tarfile.open(archive, "r:gz") as tar:
+    names = tar.getnames()
+
+if not any(name == "ptoas" or name.endswith("/ptoas") for name in names):
+    raise SystemExit(f"ptoas executable not found in archive: {archive}")
+PY
+}
+
 _steps_preflight() {
     _steps_require_cmd git || return 1
     _steps_require_cmd npu-smi || return 1
@@ -79,6 +104,7 @@ _steps_preflight() {
     _steps_require_file "${ASCEND_HOME_PATH}/compiler/ccec_compiler/bin/ccec" || return 1
     _steps_require_file "${ASCEND_HOME_PATH}/toolkit/toolchain/hcc/bin/aarch64-target-linux-gnu-gcc" || return 1
     _steps_require_file "${ASCEND_HOME_PATH}/toolkit/toolchain/hcc/bin/aarch64-target-linux-gnu-g++" || return 1
+    _steps_check_ptoas_archive || return 1
 
     npu-smi info >/dev/null 2>&1 || {
         _steps_err "npu-smi info failed"
@@ -114,7 +140,7 @@ _steps_log "python: ${SETUP_SIM_PYTHON_BIN}"
 _steps_run "bootstrap-venv" _setup_sim_bootstrap_venv
 _steps_run "install-torch" _setup_sim_install_torch_dep
 _steps_run "install-pypto" _setup_sim_install_pypto_dep
-_steps_run "download-ptoas" _setup_sim_ensure_ptoas
+_steps_run "prepare-ptoas" _setup_sim_ensure_ptoas
 _steps_run "export-env" _setup_sim_export_env
 _steps_run "validate-env" _setup_sim_validate_env
 _steps_run "select-device" _setup_npu_export_env

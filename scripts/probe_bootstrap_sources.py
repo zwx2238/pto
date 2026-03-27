@@ -8,10 +8,12 @@ import os
 import re
 import ssl
 import sys
+import tarfile
 import time
 import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass
+from pathlib import Path
 
 
 SAMPLE_BYTES = 128 * 1024
@@ -20,10 +22,9 @@ PER_PROBE_TIMEOUT_SECONDS = 2.0
 DEFAULT_MINICONDA_URL_BASE = "https://repo.anaconda.com/miniconda"
 DEFAULT_CONDA_CHANNEL = "conda-forge"
 DEFAULT_DIRECT_HOSTS = "mirrors.ustc.edu.cn mirrors.tuna.tsinghua.edu.cn pypi.tuna.tsinghua.edu.cn"
-DEFAULT_PTOAS_PRIMARY_PREFIX = "https://ghpull.com/"
+DEFAULT_PTOAS_ARCHIVE = ""
 DEFAULT_PIP_INDEX_URL = ""
 DEFAULT_TORCH_INDEX_URL = "https://download.pytorch.org/whl/cpu"
-DEFAULT_PTOAS_VERSION = "0.17"
 
 
 @dataclass
@@ -89,8 +90,8 @@ def _configured_exports() -> dict[str, str]:
         "SETUP_SIM_CONDA_CHANNEL": os.environ.get(
             "SETUP_SIM_CONDA_CHANNEL", DEFAULT_CONDA_CHANNEL
         ),
-        "SETUP_SIM_PTOAS_PRIMARY_PREFIX": os.environ.get(
-            "SETUP_SIM_PTOAS_PRIMARY_PREFIX", DEFAULT_PTOAS_PRIMARY_PREFIX
+        "SETUP_SIM_PTOAS_ARCHIVE": os.environ.get(
+            "SETUP_SIM_PTOAS_ARCHIVE", DEFAULT_PTOAS_ARCHIVE
         ),
         "SETUP_SIM_PIP_INDEX_URL": os.environ.get(
             "SETUP_SIM_PIP_INDEX_URL", DEFAULT_PIP_INDEX_URL
@@ -225,12 +226,70 @@ def _resolve_pip_probe_url(index_url: str) -> str:
     return base
 
 
-def _resolve_ptoas_url(prefix: str, arch: str) -> str:
-    archive_name = f"ptoas-bin-{arch}.tar.gz"
-    fallback_url = (
-        f"https://github.com/zhangstevenunity/PTOAS/releases/download/v{DEFAULT_PTOAS_VERSION}/{archive_name}"
+def _probe_local_archive(category: str, archive_path: str) -> ProbeResult:
+    if not archive_path:
+        return ProbeResult(
+            category=category,
+            url="",
+            proxy_mode="local",
+            ok=False,
+            bytes_read=0,
+            duration_s=0.0,
+            throughput_bps=None,
+            content_length=None,
+            estimated_total_s=None,
+            error="SETUP_SIM_PTOAS_ARCHIVE is not set",
+        )
+
+    path = Path(archive_path).expanduser()
+    start = time.perf_counter()
+    if not path.is_file():
+        return ProbeResult(
+            category=category,
+            url=str(path),
+            proxy_mode="local",
+            ok=False,
+            bytes_read=0,
+            duration_s=max(time.perf_counter() - start, 1e-6),
+            throughput_bps=None,
+            content_length=None,
+            estimated_total_s=None,
+            error=f"archive not found: {path}",
+        )
+
+    try:
+        with tarfile.open(path, "r:gz") as tar:
+            names = tar.getnames()
+        if not any(name == "ptoas" or name.endswith("/ptoas") for name in names):
+            raise RuntimeError("ptoas executable not found in archive")
+    except Exception as exc:
+        return ProbeResult(
+            category=category,
+            url=str(path),
+            proxy_mode="local",
+            ok=False,
+            bytes_read=0,
+            duration_s=max(time.perf_counter() - start, 1e-6),
+            throughput_bps=None,
+            content_length=path.stat().st_size if path.exists() else None,
+            estimated_total_s=None,
+            error=str(exc),
+        )
+
+    duration_s = max(time.perf_counter() - start, 1e-6)
+    file_size = path.stat().st_size
+    return ProbeResult(
+        category=category,
+        url=str(path),
+        proxy_mode="local",
+        ok=True,
+        bytes_read=file_size,
+        duration_s=duration_s,
+        throughput_bps=None,
+        content_length=file_size,
+        estimated_total_s=None,
+        error=None,
     )
-    return f"{prefix}{fallback_url}" if prefix else fallback_url
 
 
 def _discover_torch_wheel_url(index_url: str, deadline: float, proxy_mode: str) -> str | None:
@@ -279,7 +338,6 @@ def _build_probe_plan(configured_exports: dict[str, str], arch: str, deadline: f
 
     miniconda_url = _resolve_miniconda_url(configured_exports["SETUP_SIM_MINICONDA_URL_BASE"], arch)
     conda_url = _resolve_conda_package_url(configured_exports["SETUP_SIM_CONDA_CHANNEL"], arch)
-    ptoas_url = _resolve_ptoas_url(configured_exports["SETUP_SIM_PTOAS_PRIMARY_PREFIX"], arch)
 
     torch_index_url = configured_exports["SETUP_SIM_TORCH_INDEX_URL"]
     torch_proxy_mode = _proxy_mode_for_url(torch_index_url, direct_hosts)
@@ -288,7 +346,6 @@ def _build_probe_plan(configured_exports: dict[str, str], arch: str, deadline: f
     plan = [
         ("miniconda", miniconda_url, _proxy_mode_for_url(miniconda_url, direct_hosts)),
         ("conda_package", conda_url, _proxy_mode_for_url(conda_url, direct_hosts)),
-        ("ptoas_release", ptoas_url, _proxy_mode_for_url(ptoas_url, direct_hosts)),
     ]
     if configured_exports["SETUP_SIM_PIP_INDEX_URL"]:
         pip_url = _resolve_pip_probe_url(configured_exports["SETUP_SIM_PIP_INDEX_URL"])
@@ -321,6 +378,7 @@ def main() -> int:
         _probe_url(category, url, proxy_mode, deadline)
         for category, url, proxy_mode in _build_probe_plan(configured_exports, arch, deadline)
     ]
+    probes.append(_probe_local_archive("ptoas_archive", configured_exports["SETUP_SIM_PTOAS_ARCHIVE"]))
     elapsed = time.perf_counter() - start
 
     report = {
