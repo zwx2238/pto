@@ -202,13 +202,16 @@ _setup_sim_detect_ascend_home() {
 }
 
 _setup_sim_prepare_ascend_env() {
-    local ascend_home=""
-
-    if ! ascend_home="$(_setup_sim_detect_ascend_home 2>/dev/null)"; then
-        return 0
+    if [[ -z "${ASCEND_HOME_PATH:-}" ]]; then
+        _setup_sim_err "ASCEND_HOME_PATH is not set"
+        return 1
     fi
 
-    export ASCEND_HOME_PATH="${ASCEND_HOME_PATH:-${ascend_home}}"
+    if [[ ! -d "${ASCEND_HOME_PATH}" ]]; then
+        _setup_sim_err "ASCEND_HOME_PATH does not exist: ${ASCEND_HOME_PATH}"
+        return 1
+    fi
+
     export ASCEND_TOOLKIT_HOME="${ASCEND_TOOLKIT_HOME:-${ASCEND_HOME_PATH}}"
 
     _setup_sim_prepend_path "${ASCEND_HOME_PATH}/bin"
@@ -775,7 +778,7 @@ _setup_sim_export_env() {
     # shellcheck disable=SC1090
     source "${SETUP_SIM_VENV_DIR}/bin/activate"
     _setup_sim_prepare_local_toolchain_env
-    _setup_sim_prepare_ascend_env
+    _setup_sim_prepare_ascend_env || return 1
     _setup_sim_prepend_path_force "${SETUP_SIM_VENV_DIR}/bin"
     export SIMPLER_ROOT="${SETUP_SIM_REPO_ROOT}/frameworks/simpler"
     export PTOAS_ROOT="$(cd "$(dirname "${SETUP_SIM_PTOAS_BIN}")" && pwd)"

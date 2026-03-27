@@ -8,6 +8,10 @@ _steps_log() {
     printf '[bootstrap-test] %s\n' "$*"
 }
 
+_steps_err() {
+    printf '[bootstrap-test] ERROR: %s\n' "$*" >&2
+}
+
 _steps_run() {
     local step="$1"
     shift
@@ -29,6 +33,22 @@ _steps_run() {
     return "${rc}"
 }
 
+_steps_require_cmd() {
+    local cmd="$1"
+    command -v "$cmd" >/dev/null 2>&1 || {
+        _steps_err "missing required command: $cmd"
+        return 1
+    }
+}
+
+_steps_require_file() {
+    local path="$1"
+    [[ -f "${path}" ]] || {
+        _steps_err "missing required file: ${path}"
+        return 1
+    }
+}
+
 _choose_probe_python() {
     if command -v python3 >/dev/null 2>&1; then
         command -v python3
@@ -42,8 +62,32 @@ _choose_probe_python() {
     return 1
 }
 
+_steps_preflight() {
+    _steps_require_cmd git || return 1
+    _steps_require_cmd npu-smi || return 1
+
+    if [[ -z "${ASCEND_HOME_PATH:-}" ]]; then
+        _steps_err "ASCEND_HOME_PATH is not set"
+        return 1
+    fi
+
+    if [[ ! -d "${ASCEND_HOME_PATH}" ]]; then
+        _steps_err "ASCEND_HOME_PATH does not exist: ${ASCEND_HOME_PATH}"
+        return 1
+    fi
+
+    _steps_require_file "${ASCEND_HOME_PATH}/bin/ccec" || return 1
+    _steps_require_file "${ASCEND_HOME_PATH}/tools/hcc/bin/aarch64-target-linux-gnu-g++" || return 1
+
+    npu-smi info >/dev/null 2>&1 || {
+        _steps_err "npu-smi info failed"
+        return 1
+    }
+}
+
 PROBE_PY="$(_choose_probe_python)"
 
+_steps_run "preflight" _steps_preflight
 _steps_run "probe-report" "${PROBE_PY}" "${REPO_ROOT}/scripts/probe_bootstrap_sources.py"
 eval "$("${PROBE_PY}" "${REPO_ROOT}/scripts/probe_bootstrap_sources.py" --format shell)"
 
