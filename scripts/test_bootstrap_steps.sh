@@ -76,7 +76,7 @@ _steps_preflight() {
         return 1
     fi
 
-    _steps_require_file "${ASCEND_HOME_PATH}/tools/bisheng_compiler/bin/ccec" || return 1
+    _steps_require_file "${ASCEND_HOME_PATH}/compiler/ccec_compiler/bin/ccec" || return 1
     _steps_require_file "${ASCEND_HOME_PATH}/tools/hcc/bin/aarch64-target-linux-gnu-g++" || return 1
 
     npu-smi info >/dev/null 2>&1 || {
