@@ -52,6 +52,11 @@ export SETUP_SIM_LIBRARY_ONLY=1
 source "${REPO_ROOT}/scripts/setup_sim_env.sh"
 unset SETUP_SIM_LIBRARY_ONLY
 
+export SETUP_NPU_LIBRARY_ONLY=1
+# shellcheck disable=SC1090
+source "${REPO_ROOT}/scripts/setup_npu_env.sh"
+unset SETUP_NPU_LIBRARY_ONLY
+
 _steps_run "bootstrap-miniconda" _setup_sim_ensure_miniconda
 _steps_run "install-build-tools" _setup_sim_ensure_local_build_tools
 _steps_run "prepare-tool-env" _setup_sim_prepare_local_toolchain_env
@@ -67,6 +72,8 @@ _steps_run "install-pypto" _setup_sim_install_pypto_dep
 _steps_run "download-ptoas" _setup_sim_ensure_ptoas
 _steps_run "export-env" _setup_sim_export_env
 _steps_run "validate-env" _setup_sim_validate_env
+_steps_run "select-device" _setup_npu_export_env
+_steps_run "validate-npu-env" _setup_npu_validate_env
 
 _steps_run "prepare-runtime-cache" python "${REPO_ROOT}/scripts/measure_hello_world_runtime_only.py" \
     --prepare-cache-only --rebuild-cache "$@"

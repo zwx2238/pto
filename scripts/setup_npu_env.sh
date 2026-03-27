@@ -203,4 +203,11 @@ _setup_npu_main() {
 SETUP_NPU_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SETUP_NPU_REPO_ROOT="$(cd "${SETUP_NPU_SCRIPT_DIR}/.." && pwd)"
 
+if [[ "${SETUP_NPU_LIBRARY_ONLY:-0}" == "1" ]]; then
+    if _setup_npu_is_sourced; then
+        return 0
+    fi
+    exit 0
+fi
+
 _setup_npu_main "$@"
