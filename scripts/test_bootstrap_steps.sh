@@ -77,7 +77,8 @@ _steps_preflight() {
     fi
 
     _steps_require_file "${ASCEND_HOME_PATH}/compiler/ccec_compiler/bin/ccec" || return 1
-    _steps_require_file "${ASCEND_HOME_PATH}/tools/hcc/bin/aarch64-target-linux-gnu-g++" || return 1
+    _steps_require_file "${ASCEND_HOME_PATH}/toolkit/toolchain/hcc/bin/aarch64-target-linux-gnu-gcc" || return 1
+    _steps_require_file "${ASCEND_HOME_PATH}/toolkit/toolchain/hcc/bin/aarch64-target-linux-gnu-g++" || return 1
 
     npu-smi info >/dev/null 2>&1 || {
         _steps_err "npu-smi info failed"
