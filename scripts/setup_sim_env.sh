@@ -560,7 +560,12 @@ _setup_sim_ensure_repo_sources() {
 
     if [[ -d "${SETUP_SIM_REPO_ROOT}/.git" || -f "${SETUP_SIM_REPO_ROOT}/.git" ]]; then
         _setup_sim_log "bootstrapping submodules from current git checkout"
-        _setup_sim_run git -C "${SETUP_SIM_REPO_ROOT}" submodule update --init --recursive --depth 1 || return 1
+        if _setup_sim_run git -C "${SETUP_SIM_REPO_ROOT}" submodule update --init --recursive --depth 1; then
+            :
+        else
+            _setup_sim_log "shallow submodule bootstrap failed; retrying full history"
+            _setup_sim_run git -C "${SETUP_SIM_REPO_ROOT}" submodule update --init --recursive || return 1
+        fi
     else
         _setup_sim_log "bootstrapping sources from .gitmodules"
         _setup_sim_manual_clone_submodules || return 1
