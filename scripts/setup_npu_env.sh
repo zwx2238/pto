@@ -40,6 +40,22 @@ _setup_npu_require_file() {
     }
 }
 
+_setup_npu_bisheng_bin() {
+    printf '%s\n' "${SETUP_ASCEND_BISHENG_BIN:-${ASCEND_HOME_PATH}/compiler/ccec_compiler/bin/bisheng}"
+}
+
+_setup_npu_ld_lld_bin() {
+    printf '%s\n' "${SETUP_ASCEND_LD_LLD_BIN:-${ASCEND_HOME_PATH}/compiler/ccec_compiler/bin/ld.lld}"
+}
+
+_setup_npu_hcc_gcc_bin() {
+    printf '%s\n' "${SETUP_ASCEND_HCC_GCC_BIN:-${ASCEND_HOME_PATH}/toolkit/toolchain/hcc/bin/aarch64-target-linux-gnu-gcc}"
+}
+
+_setup_npu_hcc_gxx_bin() {
+    printf '%s\n' "${SETUP_ASCEND_HCC_GXX_BIN:-${ASCEND_HOME_PATH}/toolkit/toolchain/hcc/bin/aarch64-target-linux-gnu-g++}"
+}
+
 _setup_npu_choose_device() {
     local requested="${SETUP_NPU_DEVICE_ID:-${ASCEND_DEVICE_ID:-${NPU_DEVICE_ID:-}}}"
     if [[ -n "${requested}" ]]; then
@@ -128,10 +144,10 @@ _setup_npu_validate_env() {
         return 1
     fi
 
-    _setup_npu_require_file "${ASCEND_HOME_PATH}/compiler/ccec_compiler/bin/bisheng" || return 1
-    _setup_npu_require_file "${ASCEND_HOME_PATH}/compiler/ccec_compiler/bin/ld.lld" || return 1
-    _setup_npu_require_file "${ASCEND_HOME_PATH}/toolkit/toolchain/hcc/bin/aarch64-target-linux-gnu-gcc" || return 1
-    _setup_npu_require_file "${ASCEND_HOME_PATH}/toolkit/toolchain/hcc/bin/aarch64-target-linux-gnu-g++" || return 1
+    _setup_npu_require_file "$(_setup_npu_bisheng_bin)" || return 1
+    _setup_npu_require_file "$(_setup_npu_ld_lld_bin)" || return 1
+    _setup_npu_require_file "$(_setup_npu_hcc_gcc_bin)" || return 1
+    _setup_npu_require_file "$(_setup_npu_hcc_gxx_bin)" || return 1
 
     npu-smi info >/dev/null 2>&1 || {
         _setup_npu_err "npu-smi info failed"

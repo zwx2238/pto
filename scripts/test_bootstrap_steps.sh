@@ -49,6 +49,22 @@ _steps_require_file() {
     }
 }
 
+_steps_bisheng_bin() {
+    printf '%s\n' "${SETUP_ASCEND_BISHENG_BIN:-${ASCEND_HOME_PATH}/compiler/ccec_compiler/bin/bisheng}"
+}
+
+_steps_ld_lld_bin() {
+    printf '%s\n' "${SETUP_ASCEND_LD_LLD_BIN:-${ASCEND_HOME_PATH}/compiler/ccec_compiler/bin/ld.lld}"
+}
+
+_steps_hcc_gcc_bin() {
+    printf '%s\n' "${SETUP_ASCEND_HCC_GCC_BIN:-${ASCEND_HOME_PATH}/toolkit/toolchain/hcc/bin/aarch64-target-linux-gnu-gcc}"
+}
+
+_steps_hcc_gxx_bin() {
+    printf '%s\n' "${SETUP_ASCEND_HCC_GXX_BIN:-${ASCEND_HOME_PATH}/toolkit/toolchain/hcc/bin/aarch64-target-linux-gnu-g++}"
+}
+
 _choose_probe_python() {
     if command -v python3 >/dev/null 2>&1; then
         command -v python3
@@ -101,10 +117,10 @@ _steps_preflight() {
         return 1
     fi
 
-    _steps_require_file "${ASCEND_HOME_PATH}/compiler/ccec_compiler/bin/bisheng" || return 1
-    _steps_require_file "${ASCEND_HOME_PATH}/compiler/ccec_compiler/bin/ld.lld" || return 1
-    _steps_require_file "${ASCEND_HOME_PATH}/toolkit/toolchain/hcc/bin/aarch64-target-linux-gnu-gcc" || return 1
-    _steps_require_file "${ASCEND_HOME_PATH}/toolkit/toolchain/hcc/bin/aarch64-target-linux-gnu-g++" || return 1
+    _steps_require_file "$(_steps_bisheng_bin)" || return 1
+    _steps_require_file "$(_steps_ld_lld_bin)" || return 1
+    _steps_require_file "$(_steps_hcc_gcc_bin)" || return 1
+    _steps_require_file "$(_steps_hcc_gxx_bin)" || return 1
     _steps_check_ptoas_archive || return 1
 
     npu-smi info >/dev/null 2>&1 || {
