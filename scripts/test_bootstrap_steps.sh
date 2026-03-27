@@ -101,7 +101,8 @@ _steps_preflight() {
         return 1
     fi
 
-    _steps_require_file "${ASCEND_HOME_PATH}/compiler/ccec_compiler/bin/ccec" || return 1
+    _steps_require_file "${ASCEND_HOME_PATH}/compiler/ccec_compiler/bin/bisheng" || return 1
+    _steps_require_file "${ASCEND_HOME_PATH}/compiler/ccec_compiler/bin/ld.lld" || return 1
     _steps_require_file "${ASCEND_HOME_PATH}/toolkit/toolchain/hcc/bin/aarch64-target-linux-gnu-gcc" || return 1
     _steps_require_file "${ASCEND_HOME_PATH}/toolkit/toolchain/hcc/bin/aarch64-target-linux-gnu-g++" || return 1
     _steps_check_ptoas_archive || return 1
