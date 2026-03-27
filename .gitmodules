@@ -4,7 +4,7 @@
 	branch = main
 [submodule "frameworks/pypto"]
 	path = frameworks/pypto
-	url = https://github.com/hw-native-sys/pypto.git
+	url = https://github.com/zwx2238/pypto.git
 	branch = main
 [submodule "frameworks/simpler"]
 	path = frameworks/simpler
