@@ -429,7 +429,7 @@ _setup_sim_download() {
 
     if command -v curl >/dev/null 2>&1; then
         start_ts="$(date +%s)"
-        _setup_sim_run_for_url "$url" curl -L --fail --retry 3 -o "$output" "$url" || return 1
+        _setup_sim_run_for_url "$url" curl -k -L --fail --retry 3 -o "$output" "$url" || return 1
         end_ts="$(date +%s)"
         duration=$(( end_ts - start_ts ))
         if [[ -f "${output}" ]]; then
@@ -441,7 +441,7 @@ _setup_sim_download() {
 
     if command -v wget >/dev/null 2>&1; then
         start_ts="$(date +%s)"
-        _setup_sim_run_for_url "$url" wget -O "$output" "$url" || return 1
+        _setup_sim_run_for_url "$url" wget --no-check-certificate -O "$output" "$url" || return 1
         end_ts="$(date +%s)"
         duration=$(( end_ts - start_ts ))
         if [[ -f "${output}" ]]; then
@@ -455,13 +455,15 @@ _setup_sim_download() {
         start_ts="$(date +%s)"
         _setup_sim_run_for_url "$url" python3 - "$url" "$output" <<'PY' || return 1
 import pathlib
+import ssl
 import sys
 import urllib.request
 
 url = sys.argv[1]
 output = pathlib.Path(sys.argv[2])
 output.parent.mkdir(parents=True, exist_ok=True)
-with urllib.request.urlopen(url) as response:
+context = ssl._create_unverified_context()
+with urllib.request.urlopen(url, context=context) as response:
     output.write_bytes(response.read())
 PY
         end_ts="$(date +%s)"
@@ -477,13 +479,15 @@ PY
         start_ts="$(date +%s)"
         _setup_sim_run_for_url "$url" python - "$url" "$output" <<'PY' || return 1
 import pathlib
+import ssl
 import sys
 import urllib.request
 
 url = sys.argv[1]
 output = pathlib.Path(sys.argv[2])
 output.parent.mkdir(parents=True, exist_ok=True)
-with urllib.request.urlopen(url) as response:
+context = ssl._create_unverified_context()
+with urllib.request.urlopen(url, context=context) as response:
     output.write_bytes(response.read())
 PY
         end_ts="$(date +%s)"

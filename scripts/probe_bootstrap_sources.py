@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import re
+import ssl
 import sys
 import time
 import urllib.parse
@@ -116,9 +117,10 @@ def _proxy_mode_for_url(url: str, direct_hosts: set[str]) -> str:
 
 
 def _build_opener(proxy_mode: str) -> urllib.request.OpenerDirector:
+    https_handler = urllib.request.HTTPSHandler(context=ssl._create_unverified_context())
     if proxy_mode == "direct":
-        return urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    return urllib.request.build_opener()
+        return urllib.request.build_opener(urllib.request.ProxyHandler({}), https_handler)
+    return urllib.request.build_opener(https_handler)
 
 
 def _remaining_timeout(deadline: float) -> float:
