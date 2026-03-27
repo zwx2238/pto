@@ -3,4 +3,4 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-exec "${SCRIPT_DIR}/scripts/run_hello_world_runtime_only.sh" --enable-profiling "$@"
+exec "${SCRIPT_DIR}/scripts/test_bootstrap_steps.sh" "$@"

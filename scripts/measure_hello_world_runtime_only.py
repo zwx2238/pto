@@ -379,6 +379,11 @@ def main() -> int:
         action="store_true",
         help="Force rebuilding the hello_world runtime cache before running",
     )
+    parser.add_argument(
+        "--prepare-cache-only",
+        action="store_true",
+        help="Only prepare the runtime cache, then exit without launching runtime",
+    )
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parent.parent
@@ -391,6 +396,19 @@ def main() -> int:
         device_id = int(env_value) if env_value else 0
 
     _ensure_runtime_cache(repo_root, cache_dir, device_id, args.rebuild_cache)
+
+    if args.prepare_cache_only:
+        print(
+            json.dumps(
+                {
+                    "device_id": device_id,
+                    "cache_dir": str(cache_dir),
+                    "cache_ready": True,
+                },
+                indent=2,
+            )
+        )
+        return 0
 
     meta = json.loads((cache_dir / "meta.json").read_text())
     work_dir = Path(meta["work_dir"]).resolve()

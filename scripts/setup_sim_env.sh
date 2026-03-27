@@ -25,8 +25,22 @@ _setup_sim_err() {
 }
 
 _setup_sim_run() {
+    local start_ts end_ts duration rc
     _setup_sim_log "$*"
-    "$@"
+    start_ts="$(date +%s)"
+    if "$@"; then
+        rc=0
+    else
+        rc=$?
+    fi
+    end_ts="$(date +%s)"
+    duration=$(( end_ts - start_ts ))
+    if (( rc == 0 )); then
+        _setup_sim_log "completed in ${duration}s"
+    else
+        _setup_sim_err "command failed after ${duration}s: $*"
+    fi
+    return "${rc}"
 }
 
 _setup_sim_require_cmd() {
@@ -61,6 +75,56 @@ _setup_sim_warn_optional_cmd() {
 
 _setup_sim_git_available() {
     command -v git >/dev/null 2>&1
+}
+
+_setup_sim_url_host() {
+    local url="$1"
+    local host="${url#*://}"
+    host="${host%%/*}"
+    host="${host%%:*}"
+    printf '%s\n' "${host}"
+}
+
+_setup_sim_should_bypass_proxy_for_host() {
+    local host="$1"
+    local direct_host=""
+
+    for direct_host in ${SETUP_SIM_DIRECT_HOSTS//,/ }; do
+        [[ -n "${direct_host}" ]] || continue
+        if [[ "${host}" == "${direct_host}" ]]; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+_setup_sim_run_without_proxy() {
+    _setup_sim_run env \
+        -u HTTP_PROXY \
+        -u HTTPS_PROXY \
+        -u ALL_PROXY \
+        -u http_proxy \
+        -u https_proxy \
+        -u all_proxy \
+        -u NO_PROXY \
+        -u no_proxy \
+        "$@"
+}
+
+_setup_sim_run_for_url() {
+    local url="$1"
+    shift
+    local host=""
+
+    host="$(_setup_sim_url_host "${url}")"
+    if _setup_sim_should_bypass_proxy_for_host "${host}"; then
+        _setup_sim_log "bypass proxy for ${host}"
+        _setup_sim_run_without_proxy "$@"
+        return $?
+    fi
+
+    _setup_sim_run "$@"
 }
 
 _setup_sim_prepend_path() {
@@ -215,6 +279,32 @@ _setup_sim_detect_arch() {
     esac
 }
 
+_setup_sim_format_bytes_per_sec() {
+    local bytes="$1"
+    local seconds="$2"
+
+    if (( seconds <= 0 )); then
+        printf 'n/a\n'
+        return 0
+    fi
+
+    python3 - "$bytes" "$seconds" <<'PY'
+import sys
+
+size = int(sys.argv[1])
+seconds = int(sys.argv[2])
+rate = size / seconds
+units = ["B/s", "KiB/s", "MiB/s", "GiB/s"]
+unit = units[0]
+for candidate in units:
+    unit = candidate
+    if rate < 1024 or candidate == units[-1]:
+        break
+    rate /= 1024
+print(f"{rate:.2f} {unit}")
+PY
+}
+
 _setup_sim_choose_conda_triplet() {
     case "$(_setup_sim_detect_arch)" in
         x86_64)
@@ -246,19 +336,38 @@ _setup_sim_conda_compiler_packages() {
 _setup_sim_download() {
     local url="$1"
     local output="$2"
+    local start_ts=""
+    local end_ts=""
+    local duration=0
+    local file_size=0
 
     if command -v curl >/dev/null 2>&1; then
-        _setup_sim_run curl -L --fail --retry 3 -o "$output" "$url" || return 1
+        start_ts="$(date +%s)"
+        _setup_sim_run_for_url "$url" curl -L --fail --retry 3 -o "$output" "$url" || return 1
+        end_ts="$(date +%s)"
+        duration=$(( end_ts - start_ts ))
+        if [[ -f "${output}" ]]; then
+            file_size="$(stat -c%s "${output}")"
+            _setup_sim_log "downloaded ${file_size} bytes from ${url} in ${duration}s ($( _setup_sim_format_bytes_per_sec "${file_size}" "${duration}" ))"
+        fi
         return 0
     fi
 
     if command -v wget >/dev/null 2>&1; then
-        _setup_sim_run wget -O "$output" "$url" || return 1
+        start_ts="$(date +%s)"
+        _setup_sim_run_for_url "$url" wget -O "$output" "$url" || return 1
+        end_ts="$(date +%s)"
+        duration=$(( end_ts - start_ts ))
+        if [[ -f "${output}" ]]; then
+            file_size="$(stat -c%s "${output}")"
+            _setup_sim_log "downloaded ${file_size} bytes from ${url} in ${duration}s ($( _setup_sim_format_bytes_per_sec "${file_size}" "${duration}" ))"
+        fi
         return 0
     fi
 
     if command -v python3 >/dev/null 2>&1; then
-        _setup_sim_run python3 - "$url" "$output" <<'PY' || return 1
+        start_ts="$(date +%s)"
+        _setup_sim_run_for_url "$url" python3 - "$url" "$output" <<'PY' || return 1
 import pathlib
 import sys
 import urllib.request
@@ -269,11 +378,18 @@ output.parent.mkdir(parents=True, exist_ok=True)
 with urllib.request.urlopen(url) as response:
     output.write_bytes(response.read())
 PY
+        end_ts="$(date +%s)"
+        duration=$(( end_ts - start_ts ))
+        if [[ -f "${output}" ]]; then
+            file_size="$(stat -c%s "${output}")"
+            _setup_sim_log "downloaded ${file_size} bytes from ${url} in ${duration}s ($( _setup_sim_format_bytes_per_sec "${file_size}" "${duration}" ))"
+        fi
         return 0
     fi
 
     if command -v python >/dev/null 2>&1; then
-        _setup_sim_run python - "$url" "$output" <<'PY' || return 1
+        start_ts="$(date +%s)"
+        _setup_sim_run_for_url "$url" python - "$url" "$output" <<'PY' || return 1
 import pathlib
 import sys
 import urllib.request
@@ -284,6 +400,12 @@ output.parent.mkdir(parents=True, exist_ok=True)
 with urllib.request.urlopen(url) as response:
     output.write_bytes(response.read())
 PY
+        end_ts="$(date +%s)"
+        duration=$(( end_ts - start_ts ))
+        if [[ -f "${output}" ]]; then
+            file_size="$(stat -c%s "${output}")"
+            _setup_sim_log "downloaded ${file_size} bytes from ${url} in ${duration}s ($( _setup_sim_format_bytes_per_sec "${file_size}" "${duration}" ))"
+        fi
         return 0
     fi
 
@@ -329,6 +451,12 @@ _setup_sim_conda_install() {
         _setup_sim_err "conda not found after Miniconda bootstrap: ${conda_bin}"
         return 1
     }
+
+    if [[ "${channel}" == http://* || "${channel}" == https://* ]]; then
+        _setup_sim_run_for_url "${channel}" env PYTHONPATH= "${conda_bin}" install -y --override-channels \
+            --prefix "${SETUP_SIM_MINICONDA_DIR}" -c "${channel}" "$@" || return 1
+        return 0
+    fi
 
     _setup_sim_run env PYTHONPATH= "${conda_bin}" install -y --override-channels \
         --prefix "${SETUP_SIM_MINICONDA_DIR}" -c "${channel}" "$@" || return 1
@@ -399,7 +527,7 @@ _setup_sim_manual_clone_submodules() {
         rm -rf "${submodule_dir}"
         mkdir -p "$(dirname "${submodule_dir}")"
 
-        clone_cmd=(git clone --recursive)
+        clone_cmd=(git clone --recursive --depth 1 --shallow-submodules)
         if [[ -n "${submodule_branch}" ]]; then
             clone_cmd+=(--branch "${submodule_branch}")
         fi
@@ -421,7 +549,7 @@ _setup_sim_ensure_repo_sources() {
 
     if [[ -d "${SETUP_SIM_REPO_ROOT}/.git" || -f "${SETUP_SIM_REPO_ROOT}/.git" ]]; then
         _setup_sim_log "bootstrapping submodules from current git checkout"
-        _setup_sim_run git -C "${SETUP_SIM_REPO_ROOT}" submodule update --init --recursive || return 1
+        _setup_sim_run git -C "${SETUP_SIM_REPO_ROOT}" submodule update --init --recursive --depth 1 || return 1
     else
         _setup_sim_log "bootstrapping sources from .gitmodules"
         _setup_sim_manual_clone_submodules || return 1
@@ -480,6 +608,12 @@ _setup_sim_pip() {
     shift
 
     if [[ -n "${SETUP_SIM_PIP_INDEX_URL:-}" ]]; then
+        if [[ "${SETUP_SIM_PIP_INDEX_URL}" == http://* || "${SETUP_SIM_PIP_INDEX_URL}" == https://* ]]; then
+            _setup_sim_run_for_url "${SETUP_SIM_PIP_INDEX_URL}" env PYTHONPATH= PIP_INDEX_URL="${SETUP_SIM_PIP_INDEX_URL}" \
+                "${python_bin}" -m pip "$@" || return 1
+            return 0
+        fi
+
         _setup_sim_run env PYTHONPATH= PIP_INDEX_URL="${SETUP_SIM_PIP_INDEX_URL}" \
             "${python_bin}" -m pip "$@" || return 1
         return 0
@@ -510,12 +644,19 @@ _setup_sim_pip_torch() {
 }
 
 _setup_sim_install_python_deps() {
+    _setup_sim_install_torch_dep || return 1
+    _setup_sim_install_pypto_dep || return 1
+}
+
+_setup_sim_install_torch_dep() {
     if ! "${SETUP_SIM_VENV_DIR}/bin/python" -c "import torch" >/dev/null 2>&1; then
         _setup_sim_pip_torch "${SETUP_SIM_VENV_DIR}/bin/python" install torch || return 1
     else
         _setup_sim_log "torch already available in ${SETUP_SIM_VENV_DIR}"
     fi
+}
 
+_setup_sim_install_pypto_dep() {
     if ! "${SETUP_SIM_VENV_DIR}/bin/python" -c "import pypto" >/dev/null 2>&1; then
         _setup_sim_pip "${SETUP_SIM_VENV_DIR}/bin/python" install -e "${SETUP_SIM_REPO_ROOT}/frameworks/pypto" || return 1
     else
@@ -548,7 +689,7 @@ _setup_sim_ensure_ptoas() {
 
     arch="$(_setup_sim_detect_arch)" || return 1
     archive_fallback_url="https://github.com/zhangstevenunity/PTOAS/releases/download/v${SETUP_SIM_PTOAS_VERSION}/ptoas-bin-${arch}.tar.gz"
-    archive_url="https://ghpull.com/${archive_fallback_url}"
+    archive_url="${SETUP_SIM_PTOAS_PRIMARY_PREFIX}${archive_fallback_url}"
 
     tmp_dir="$(mktemp -d)"
     archive_path="${tmp_dir}/ptoas-bin-${arch}.tar.gz"
@@ -698,11 +839,20 @@ SETUP_SIM_TOOLS_BIN_DIR="${SETUP_SIM_TOOLS_BIN_DIR:-${SETUP_SIM_TOOLS_DIR}/bin}"
 SETUP_SIM_MINICONDA_DIR="${SETUP_SIM_MINICONDA_DIR:-${SETUP_SIM_TOOLS_DIR}/miniconda3}"
 SETUP_SIM_MINICONDA_URL_BASE="${SETUP_SIM_MINICONDA_URL_BASE:-https://repo.anaconda.com/miniconda}"
 SETUP_SIM_CONDA_CHANNEL="${SETUP_SIM_CONDA_CHANNEL:-conda-forge}"
+SETUP_SIM_DIRECT_HOSTS="${SETUP_SIM_DIRECT_HOSTS:-mirrors.ustc.edu.cn mirrors.tuna.tsinghua.edu.cn pypi.tuna.tsinghua.edu.cn}"
 SETUP_SIM_VENV_DIR="${SETUP_SIM_VENV_DIR:-${SETUP_SIM_REPO_ROOT}/.venv-pto-sim}"
 SETUP_SIM_PTOAS_DIR="${SETUP_SIM_PTOAS_DIR:-${SETUP_SIM_REPO_ROOT}/.tools/ptoas-bin}"
 SETUP_SIM_PTOAS_VERSION="${SETUP_SIM_PTOAS_VERSION:-0.17}"
+SETUP_SIM_PTOAS_PRIMARY_PREFIX="${SETUP_SIM_PTOAS_PRIMARY_PREFIX:-https://ghpull.com/}"
 SETUP_SIM_PIP_INDEX_URL="${SETUP_SIM_PIP_INDEX_URL:-https://mirrors.ustc.edu.cn/pypi/simple}"
 SETUP_SIM_TORCH_INDEX_URL="${SETUP_SIM_TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}"
+
+if [[ "${SETUP_SIM_LIBRARY_ONLY:-0}" == "1" ]]; then
+    if _setup_sim_is_sourced; then
+        return 0
+    fi
+    exit 0
+fi
 
 if _setup_sim_is_sourced; then
     _setup_sim_main "$@" || return $?
